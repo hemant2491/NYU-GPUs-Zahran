@@ -115,24 +115,24 @@ int main(int argc, char *argv[]){
 		   you need to decide about the number of threads, blocks, etc and their geometry.
 		*/
 		int threadsPerBlock, blocksPerGrid;
-		// 4 blocks and 500 threads per block
-		blocksPerGrid = 4;
-		threadsPerBlock = 500;
-		// // 8 blocks and 500 threads per block
+		// // 4 blocks and 500 threads per block
 		// blocksPerGrid = 4;
 		// threadsPerBlock = 500;
+		// 8 blocks and 500 threads per block
+		blocksPerGrid = 8;
+		threadsPerBlock = 500;
 		// // 16 blocks and 500 blocks per block
-		// blocksPerGrid = 4;
+		// blocksPerGrid = 16;
 		// threadsPerBlock = 500;
 		// // 4 blocks and 250 threads per block
 		// blocksPerGrid = 4;
-		// threadsPerBlock = 500;
+		// threadsPerBlock = 250;
 		// // 8 blocks and 250 threads per block
-		// blocksPerGrid = 4;
-		// threadsPerBlock = 500;
+		// blocksPerGrid = 8;
+		// threadsPerBlock = 250;
 		// // 16 blocks and 250 blocks per block
-		// blocksPerGrid = 4;
-		// threadsPerBlock = 500;
+		// blocksPerGrid = 16;
+		// threadsPerBlock = 250;
 
 		// dim3 block(threadsPerBlock);
 		// dim3 grid(blocksPerGrid);
