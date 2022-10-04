@@ -7,7 +7,7 @@
 
 /*** TODO: insert the declaration of the kernel function below this line ***/
 __global__
-void vecGPU(float* ad, float* bd, float* cd, int n);
+void vecGPU(float* ad, float* bd, float* cd, int n, int threadsPerBlock);
 
 /**** end of the kernel declaration ***/
 
@@ -87,21 +87,21 @@ int main(int argc, char *argv[]){
 	    err = cudaMalloc((void **)&ad, size);
 		if(err != cudaSuccess)
 		{
-			printf("Error allocating array ad on device\n");
+			fprintf(stderr, "Error allocating array ad on device: %s\n", cudaGetErrorString(err));
 			exit(1);
 		}
 
 		err = cudaMalloc((void **)&bd, size);
 		if(err != cudaSuccess)
 		{
-			printf("Error allocating array bd on device\n");
+			fprintf(stderr, "Error allocating array bd on device: %s\n", cudaGetErrorString(err));
 			exit(1);
 		}
 
 		err = cudaMalloc((void **)&cd, size);
 		if(err != cudaSuccess)
 		{
-			printf("Error allocating array cd on device\n");
+			fprintf(stderr, "Error allocating array cd on device: %s\n", cudaGetErrorString(err));
 			exit(1);
 		}
 
@@ -136,7 +136,7 @@ int main(int argc, char *argv[]){
 
 		// dim3 block(threadsPerBlock);
 		// dim3 grid(blocksPerGrid);
-		vecGPU<<<blocksPerGrid,threadsPerBlock>>>(ad, bd, cd, n);
+		vecGPU<<<blocksPerGrid,threadsPerBlock>>>(ad, bd, cd, n, blocksPerGrid*threadsPerBlock);
 		end = clock();
 	/* TODO: 
 		5. bring the cd array back from the device and store it in c array (declared earlier in main)
@@ -151,6 +151,7 @@ int main(int argc, char *argv[]){
 	printf("Total time taken by the GPU part = %lf\n", (double)(end - start) / CLOCKS_PER_SEC);
 	/******************  The end of the GPU part: Do not modify anything in main() below this line  ************/
 	
+	int wrongCount = 0;
 	//checking the correctness of the GPU part
 	for(i = 0; i < n; i++)
 	{
@@ -158,8 +159,11 @@ int main(int argc, char *argv[]){
 		{
 			printf("Element %d in the result array does not match the sequential version\n", i);
 			// printf("%d:\ta %.2lf\tb %.2lf\tc\tsequential %.2lf\tGPU %.2lf\n\n", i, a[i], b[i], temp[i], c[i]);
+			wrongCount++;
 		}
 	}
+
+	printf("Number of c values:\twrong %d\tcorrect %d\n", wrongCount, n-wrongCount);
 		
 	// Free the arrays in the host
 	free(a); free(b); free(c); free(temp);
@@ -171,12 +175,18 @@ int main(int argc, char *argv[]){
 /**** TODO: Write the kernel itself below this line *****/
 
 __global__
-void vecGPU(float* ad, float* bd, float* cd, int n)
+void vecGPU(float* ad, float* bd, float* cd, int n, int totalNumOfThreads)
 {
-    int i = threadIdx.x + blockDim.x * blockIdx.x;
-    if(i<n)
-    {
-        cd[i] += ad[i] * bd[i];
-    }
+    // int totalNumOfThreads = blockDim.x * gridDim.x;
+	int i, j, index;
+	j = threadIdx.x + blockDim.x * blockIdx.x;
+	for (i = 1; i <= (n/totalNumOfThreads + 1); i++)
+	{
+		index = i * j;
+		if(index<n)
+		{
+			cd[index] += ad[index] * bd[index];
+		}
+	}
 }
 
