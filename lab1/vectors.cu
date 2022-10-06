@@ -4,6 +4,7 @@
 #include <cuda.h>
 
 #define RANGE 19.87
+#define BILLION  1000000000.00;
 
 /*** TODO: insert the declaration of the kernel function below this line ***/
 __global__
@@ -19,7 +20,9 @@ int main(int argc, char *argv[]){
 	float *a, *b, *c; // The arrays that will be processed in the host.
 	float *temp;  //array in host used in the sequential code.
 	float *ad, *bd, *cd; //The arrays that will be processed in the device.
-	clock_t start, end; // to meaure the time taken by a specific part of code
+	// clock_t start, end; // to meaure the time taken by a specific part of code
+	struct timespec start2, end2; // to meaure the time taken by a specific part of code
+	double accum;
 	
 	if(argc != 2){
 		printf("usage:  ./vectorprog n\n");
@@ -67,11 +70,28 @@ int main(int argc, char *argv[]){
 	}
 	
     //The sequential part
-	start = clock();
+	// start = clock();
+	// if( clock_gettime( CLOCK_REALTIME, &start2) == -1 ) {
+    //   perror( "clock gettime" );
+    //   exit( EXIT_FAILURE );
+    // }
+	clock_gettime( CLOCK_REALTIME, &start2);
+
 	for(i = 0; i < n; i++)
 		temp[i] += a[i] * b[i];
-	end = clock();
-	printf("Total time taken by the sequential part = %lf\n", (double)(end - start) / CLOCKS_PER_SEC);
+	// end = clock();
+
+	if( clock_gettime( CLOCK_REALTIME, &end2) == -1 ) {
+      perror( "clock gettime" );
+      exit( EXIT_FAILURE );
+    }
+	// clock_gettime( CLOCK_REALTIME, &end2);
+	// printf("Total time taken by the sequential part = %lf\n", (double)(end - start) / CLOCKS_PER_SEC);
+	accum = ( end2.tv_sec - start2.tv_sec )
+          + ( end2.tv_nsec - start2.tv_nsec )
+            / BILLION;
+	// printf("Sequential: Start sec %lf nsec %lf\t end sec %lf nsec %lf\n", start2.tv_sec, start2.tv_nsec, end2.tv_sec, end2.tv_nsec);
+	printf("Total time taken by the sequential part = %lf\n", accum);
 
     /******************  The start GPU part: Do not modify anything in main() above this line  ************/
 	//The GPU part
@@ -109,7 +129,13 @@ int main(int argc, char *argv[]){
 		cudaMemcpy(bd, b, size, cudaMemcpyHostToDevice);
 		cudaMemcpy(cd, c, size, cudaMemcpyHostToDevice);
 		
-	/* TODO: 	
+		// start = clock();
+
+		if( clock_gettime( CLOCK_REALTIME, &start2) == -1 ) {
+			perror( "clock gettime" );
+			exit( EXIT_FAILURE );
+		}
+		/* TODO: 	
 		3. write the kernel, call it: vecGPU
 		4. call the kernel (the kernel itself will be written at the comment at the end of this file), 
 		   you need to decide about the number of threads, blocks, etc and their geometry.
@@ -136,9 +162,13 @@ int main(int argc, char *argv[]){
 
 		// dim3 block(threadsPerBlock);
 		// dim3 grid(blocksPerGrid);
-		start = clock();
+
 		vecGPU<<<blocksPerGrid,threadsPerBlock>>>(ad, bd, cd, n);
-		end = clock();
+		// end = clock();
+		if( clock_gettime( CLOCK_REALTIME, &end2) == -1 ) {
+			perror( "clock gettime" );
+			exit( EXIT_FAILURE );
+		}
 	/* TODO: 
 		5. bring the cd array back from the device and store it in c array (declared earlier in main)
 		6. free ad, bd, and cd
@@ -149,7 +179,12 @@ int main(int argc, char *argv[]){
 		cudaFree(bd);
 		cudaFree(cd);
 	
-	printf("Total time taken by the GPU part = %lf\n", (double)(end - start) / CLOCKS_PER_SEC);
+	// printf("Total time taken by the GPU part = %lf\n", (double)(end - start) / CLOCKS_PER_SEC);
+	// printf("GPU: Start sec %lf nsec %lf\t end sec %lf nsec %lf\n", start2.tv_sec, start2.tv_nsec, end2.tv_sec, end2.tv_nsec);
+	accum = ( end2.tv_sec - start2.tv_sec )
+          + ( end2.tv_nsec - start2.tv_nsec )
+            / BILLION;
+	printf("Total time taken by the GPU part = %lf\n", accum);
 	/******************  The end of the GPU part: Do not modify anything in main() below this line  ************/
 	
 	// int wrongCount = 0;

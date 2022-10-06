@@ -1,3 +1,3 @@
 Each vector will have 1000000 elements
-Total time taken by the sequential part = 0.000000
-Total time taken by the GPU part = 0.000000
+Total time taken by the sequential part = 0.005468
+Total time taken by the GPU part = 0.000258
