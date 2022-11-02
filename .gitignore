@@ -2,4 +2,5 @@
 .DS_Store
 Desktop.ini
 
-cuda_examples
+cuda_samples
+cuda_samples_1
