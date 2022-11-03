@@ -22,6 +22,10 @@ void  seq_heat_dist(float *, unsigned int, unsigned int);
 void  gpu_heat_dist(float *, unsigned int, unsigned int);
 void  gpu_optimized_heat_dist(float *, unsigned int, unsigned int);
 
+// Kernel funtions
+__global__
+void updateTemperatures(float* current, float* last, int n);
+
 /*****************************************************************/
 /**** Do NOT CHANGE ANYTHING in main() function ******/
 
@@ -151,10 +155,56 @@ void  seq_heat_dist(float * playground, unsigned int N, unsigned int iterations)
 /* This function can call one or more kernels if you want ********************/
 void  gpu_heat_dist(float * playground, unsigned int N, unsigned int iterations)
 {
+  int k;
   
+  // number of bytes to be copied between array temp and array playground
+  // unsigned int num_bytes = 0;
+  int size = N * N * sizeof(float);
+
+  float *playground_d, *playground_d_last, *temp;
   
+  cudaError_t err = cudaSuccess;
+
+  err = cudaMalloc((void **)&playground_d, size);
+  if(err != cudaSuccess)
+  {
+    fprintf(stderr, "Error allocating playground_d array on device: %s\n", cudaGetErrorString(err));
+    exit(1);
+  }
+
+  err = cudaMalloc((void **)&playground_d_last, size);
+  if(err != cudaSuccess)
+  {
+    fprintf(stderr, "Error allocating temp array on device: %s\n", cudaGetErrorString(err));
+    exit(1);
+  }
+
+  cudaMemcpy(playground_d, playground, size, cudaMemcpyHostToDevice);
+  cudaMemcpy(playground_d_last, playground, size, cudaMemcpyHostToDevice);
+
+  int threadsPerBlock, blocksPerGrid;
+  threadsPerBlock = N*N;
+  blocksPerGrid = 1;
   
+  for( k = 0; k < iterations; k++)
+  {
+    
+    updateTemperatures<<<blocksPerGrid,threadsPerBlock>>>(playground_d, playground_d_last, N);
+    
+    /* Move new values into old values */ 
+    // memcpy((void *)playground, (void *) temp, num_bytes);
+    temp = playground_d;
+    playground_d = playground_d_last;
+    playground_d_last = temp;
+  }
+  
+  cudaMemcpy(playground, playground_d, size, cudaMemcpyDeviceToHost);
+
+  cudaFree(playground_d);
+  cudaFree(playground_d_last);
+
 }
+
 /***************** The GPU optimized version: Write your code here *********************/
 /* This function can call one or more kernels if you want ********************/
 void  gpu_optimized_heat_dist(float * playground, unsigned int N, unsigned int iterations)
@@ -164,4 +214,30 @@ void  gpu_optimized_heat_dist(float * playground, unsigned int N, unsigned int i
   
 }
 
+
+__global__
+void updateTemperatures(float* current, float* last, int N)
+{
+
+  if (threadIdx.y == blockDim.y 
+      || threadIdx.y == 0 
+      || threadIdx.x == 0 
+      || threadIdx.x == blockDim.x)
+  {
+    return;
+  }
+
+  int index, top, bottom, left, right;
+  // index = threadIdx.x + blockDim.x * blockIdx.x;
+  index = threadIdx.y * blockDim.x + threadIdx.x;
+  top = (threadIdx.y+1) * blockDim.x + threadIdx.x;
+  bottom = (threadIdx.y-1) * blockDim.x + threadIdx.x;
+  left = threadIdx.y * blockDim.x + threadIdx.x-1;
+  right = threadIdx.y * blockDim.x + threadIdx.x+1;
+
+
+  current[index] = (last[top] + last[bottom] + 
+                    last[left] + last[right])/4.0;
+
+}
 
