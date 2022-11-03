@@ -14,6 +14,7 @@
 
 /* To index element (i,j) of a 2D square array of dimension NxN stored as 1D */
 #define index(i, j, N)  ((i)*(N)) + (j)
+#define WIDTH 75
 
 /*****************************************************************/
 
@@ -23,8 +24,9 @@ void  gpu_heat_dist(float *, unsigned int, unsigned int);
 void  gpu_optimized_heat_dist(float *, unsigned int, unsigned int);
 
 // Kernel funtions
-__global__
-void updateTemperatures(float* current, float* last, int n);
+__global__ void updateTemperatures(float* current, float* last, int n);
+__global__ void updateTemperaturesOptimized(float* global, unsigned int N, unsigned int iterations);
+// __device__ void loadDataFromGloablToShared(float* global, float* local);
 
 /*****************************************************************/
 /**** Do NOT CHANGE ANYTHING in main() function ******/
@@ -97,6 +99,15 @@ int main(int argc, char * argv[])
 			 exit(1);
   }
   
+  // printf("Final output:\n");
+  // for(int i = 0; i<N; i++)
+  // {
+  //   for(int j = 0; j<N; j++)
+  //   {
+  //     printf("%lf ", playground[index(i,j,N)]);
+  //   }
+  //   printf("\n");
+  // }
   time_taken = ((double)(end - start))/ CLOCKS_PER_SEC;
   
   printf("Time taken = %lf\n", time_taken);
@@ -156,12 +167,9 @@ void  seq_heat_dist(float * playground, unsigned int N, unsigned int iterations)
 void  gpu_heat_dist(float * playground, unsigned int N, unsigned int iterations)
 {
   int k;
-  
-  // number of bytes to be copied between array temp and array playground
-  // unsigned int num_bytes = 0;
   int size = N * N * sizeof(float);
 
-  float *playground_d, *playground_d_last, *temp;
+  float *playground_d, *playground_d_last;//, *temp;
   
   cudaError_t err = cudaSuccess;
 
@@ -182,20 +190,14 @@ void  gpu_heat_dist(float * playground, unsigned int N, unsigned int iterations)
   cudaMemcpy(playground_d, playground, size, cudaMemcpyHostToDevice);
   cudaMemcpy(playground_d_last, playground, size, cudaMemcpyHostToDevice);
 
-  int threadsPerBlock, blocksPerGrid;
-  threadsPerBlock = N*N;
-  blocksPerGrid = 1;
+  dim3 threadsPerBlock(N,N);
+  dim3 blocksPerGrid(1);
   
   for( k = 0; k < iterations; k++)
   {
     
     updateTemperatures<<<blocksPerGrid,threadsPerBlock>>>(playground_d, playground_d_last, N);
-    
-    /* Move new values into old values */ 
-    // memcpy((void *)playground, (void *) temp, num_bytes);
-    temp = playground_d;
-    playground_d = playground_d_last;
-    playground_d_last = temp;
+    cudaMemcpy(playground_d_last, playground_d, size, cudaMemcpyDeviceToDevice);
   }
   
   cudaMemcpy(playground, playground_d, size, cudaMemcpyDeviceToHost);
@@ -210,7 +212,32 @@ void  gpu_heat_dist(float * playground, unsigned int N, unsigned int iterations)
 void  gpu_optimized_heat_dist(float * playground, unsigned int N, unsigned int iterations)
 {
   
-  
+  int size = N * N * sizeof(float);
+  float *playground_d;
+
+  cudaError_t err = cudaSuccess;
+  err = cudaMalloc((void **)&playground_d, size);
+  if(err != cudaSuccess)
+  {
+    fprintf(stderr, "Error allocating playground_d array on device: %s\n", cudaGetErrorString(err));
+    exit(1);
+  }
+
+  cudaMemcpy(playground_d, playground, size, cudaMemcpyHostToDevice);
+
+  // int threadsPerBlock, blocksPerGrid;
+  // threadsPerBlock = WIDTH * WIDTH;
+  // blocksPerGrid = N*N / threadsPerBlock;
+
+  dim3 block(WIDTH,WIDTH);
+	// dim3 grid( (N*N) / (WIDTH * WIDTH));
+	dim3 grid( N/WIDTH, N/WIDTH);
+
+  updateTemperaturesOptimized<<<grid,block>>>(playground_d, N, iterations);
+    
+  cudaMemcpy(playground, playground_d, size, cudaMemcpyDeviceToHost);
+
+  cudaFree(playground_d);
   
 }
 
@@ -219,25 +246,85 @@ __global__
 void updateTemperatures(float* current, float* last, int N)
 {
 
-  if (threadIdx.y == blockDim.y 
+  int index, top, bottom, left, right;
+  // index = threadIdx.x + blockDim.x * blockIdx.x;
+  index = threadIdx.y * blockDim.x + threadIdx.x;
+  // printf("%d: %lf -> %lf\n", index, last[index], current[index]);
+  if (threadIdx.y == blockDim.y-1 
       || threadIdx.y == 0 
       || threadIdx.x == 0 
-      || threadIdx.x == blockDim.x)
+      || threadIdx.x == blockDim.x-1)
   {
     return;
   }
 
-  int index, top, bottom, left, right;
-  // index = threadIdx.x + blockDim.x * blockIdx.x;
-  index = threadIdx.y * blockDim.x + threadIdx.x;
+  // int index, top, bottom, left, right;
+  // // index = threadIdx.x + blockDim.x * blockIdx.x;
+  // index = threadIdx.y * blockDim.x + threadIdx.x;
   top = (threadIdx.y+1) * blockDim.x + threadIdx.x;
   bottom = (threadIdx.y-1) * blockDim.x + threadIdx.x;
   left = threadIdx.y * blockDim.x + threadIdx.x-1;
   right = threadIdx.y * blockDim.x + threadIdx.x+1;
 
 
+  
   current[index] = (last[top] + last[bottom] + 
                     last[left] + last[right])/4.0;
+  
+  // printf("%d: %lf -> %lf\n", index, last[index], current[index]);
+
+}
+
+__global__
+void updateTemperaturesOptimized(float* playground_d, unsigned int N, unsigned int iterations)
+{
+
+  int tx = threadIdx.x;
+  int ty = threadIdx.y;
+  int bx = blockIdx.x;
+  int by = blockIdx.y;
+  int row = by * WIDTH + ty;
+  int col = bx * WIDTH + tx;
+  int globalIndex = row*N + col;
+
+  __shared__ float s_current[WIDTH+2][WIDTH+2];
+  // __shared__ float s_temp[WIDTH+2][WIDTH+2];
+
+  // if((bx == 0 && tx == 0) || (bx == N-1 && tx == WIDTH-1)  || (by == 0 && ty == 0) || (by == N-1 && ty == WIDTH-1))
+  // if(row == 0 || row == N-1  || col == 0 || col == N-1)
+  // {
+  //   float value = playground_d[globalIndex];
+  //   s_current[ty+1][tx+1] = value;
+  //   // s_temp[ty+1][tx+1] = value;
+  //   return;
+  // }
+  
+
+  for(int k = 0; k < iterations; k++)
+  {
+    float value = playground_d[globalIndex];
+    s_current[ty+1][tx+1] = value;
+    // s_temp[ty+1][tx+1] = value;
+
+    if (tx == 0 && bx != 0) { s_current[ty+1][tx] = playground_d[row*N + col-1];}
+    if(tx == WIDTH-1 && bx != N/WIDTH-1) { s_current[ty+1][tx+1+1] = playground_d[row*N + col+1];}
+    if(ty == 0 && by != 0) { s_current[ty][tx+1] = playground_d[(row-1)*N + col];}
+    if(ty == WIDTH-1 && by != N/WIDTH-1) { s_current[ty+1+1][tx+1] = playground_d[(row+1)*N + col];}
+
+    __syncthreads();
+
+    playground_d[globalIndex] = (s_current[ty+1][tx+1+1] + 
+                      s_current[ty+1][tx-1+1] + 
+                      s_current[ty+1+1][tx+1] + 
+                      s_current[ty-1+1][tx+1])/4.0;
+    
+    __syncthreads();
+
+    // playground_d[globalIndex] = s_temp[ty+1][tx+1];
+    __syncthreads();
+    //  printf("%d: %lf -> %lf/%lf\n", globalIndex, s_current[tx+1][ty+1], playground_d[globalIndex], s_temp[tx+1][ty+1]);
+
+  }
 
 }
 
